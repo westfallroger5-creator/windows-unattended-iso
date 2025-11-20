@@ -35,7 +35,7 @@ Write-Host "v1.3 (with Windows 11 25H2 Quick Machine Recovery support)"
 # Function: Display the main menu
 function Show-Menu {
     Write-Host "=========================================="
-    Write-Host "       System Management Menu"
+    Write-Host "       System Management Menu it worked"
     Write-Host "=========================================="
     Write-Host "1. First Time Dell Setup Routine (Default)"
     Write-Host "2. First Time Other Setup Routine"
