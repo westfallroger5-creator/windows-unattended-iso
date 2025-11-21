@@ -33,7 +33,7 @@ $asciiArt = @"
 "@
 Write-Host $asciiArt -ForegroundColor Black
 Write-Host "Welcome to the System Management Script!"
-Write-Host "v2.1 (Smart Auto Mode + Quick Machine Recovery registry enablement)"
+Write-Host "v2.2 (Smart Auto Mode + Silent NuGet + Quick Machine Recovery registry mode)"
 
 # Global reboot flag
 $script:RebootRequired = $false
@@ -160,12 +160,12 @@ function Set-Hostname {
     }
 }
 
-# Function: Install Windows updates (Get me up to date) - NO reboot here, NO Active Hours changes
+# Function: Install Windows updates (Silent NuGet + Silent PSGallery + No reboot)
 function Install-WindowsUpdates-GetMeUpToDate {
     Write-Log "Preparing Windows Update environment..."
 
     try {
-        # Reset WU components to prevent corrupt metadata / fake huge downloads / hangs
+        # Reset WU components (fixes 89GB bug + hung updates)
         Write-Log "Resetting Windows Update components..."
         Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
         Stop-Service bits -Force -ErrorAction SilentlyContinue
@@ -177,16 +177,32 @@ function Install-WindowsUpdates-GetMeUpToDate {
         Start-Service bits -ErrorAction SilentlyContinue
         Write-Log "Windows Update components reset."
 
-        # Ensure PSWindowsUpdate is available
-        if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
-            Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
+        # Ensure NuGet provider exists silently
+        Write-Log "Ensuring NuGet provider is installed..."
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $nuget = Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue
+
+        if (-not $nuget) {
+            Write-Log "NuGet provider missing. Installing silently..."
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Confirm:$false
+            Write-Log "NuGet provider installed."
+        } else {
+            Write-Log "NuGet provider already installed."
         }
-        Import-Module PSWindowsUpdate
+
+        # Ensure PSGallery trusted
+        Set-PackageSource -Name "PSGallery" -Trusted -ErrorAction SilentlyContinue
+
+        # Ensure PSWindowsUpdate installed silently
+        if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
+            Write-Log "Installing PSWindowsUpdate module..."
+            Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser -Confirm:$false
+        }
+        Import-Module PSWindowsUpdate -Force
 
         Write-Log "Scanning for updates..."
         Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot | Out-Null
 
-        # Check reboot-needed state
         try {
             $rebootStatus = Get-WURebootStatus -Silent
             if ($rebootStatus.RebootRequired) {
@@ -235,7 +251,7 @@ function Run-MemoryDiagnostic {
     }
 }
 
-# Function: Check Secure Boot (logged in Option 1)
+# Function: Check Secure Boot
 function Check-SecureBootStatus {
     try {
         $secureBootState = Confirm-SecureBootUEFI
