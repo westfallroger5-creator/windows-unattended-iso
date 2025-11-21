@@ -206,7 +206,6 @@ function Run-SmartFirstTimeSetup {
     Set-Hostname
     Enable-QuickMachineRecovery
     Install-WindowsUpdates-GetMeUpToDate
-    Check-SecureBootUEFI | Out-Null
 
     Write-Log "===== Setup Complete ====="
     Write-Host "`n>>> Setup finished. Review Windows Update progress, then reboot when ready."
