@@ -155,31 +155,43 @@ function Set-Hostname {
 
 # Function: Install Windows updates (Get me up to date) - NO reboot here
 function Install-WindowsUpdates-GetMeUpToDate {
-    Write-Log "Enabling 'Get me up to date' behavior for Windows Updates..."
+    Write-Log "Preparing Windows Update environment..."
 
     try {
+        # Reset WU components to prevent corrupt metadata issues
+        Write-Log "Resetting Windows Update components..."
+        Stop-Service wuauserv -Force
+        Stop-Service bits -Force
+
+        Remove-Item -Recurse -Force "C:\Windows\SoftwareDistribution\Download\*" -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force "C:\Windows\SoftwareDistribution\DataStore\*" -ErrorAction SilentlyContinue
+
+        Start-Service wuauserv
+        Start-Service bits
+        Write-Log "Windows Update components reset."
+
+        # Ensure PSWindowsUpdate is available
         if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
             Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
         }
+
         Import-Module PSWindowsUpdate
 
-        Write-Log "Disabling active hours..."
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "SmartActiveHoursState" -Value 0 -Force
+        Write-Log "Scanning for updates..."
+        Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot | Out-Null
 
-        Write-Log "Scanning for available updates..."
-        Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot -Verbose | Out-Null
-
-        # Check if reboot is needed
+        # Check reboot-needed state
         try {
             $rebootStatus = Get-WURebootStatus -Silent
             if ($rebootStatus.RebootRequired) {
-                Write-Log "Windows Updates indicate a reboot is required."
+                Write-Log "Windows Update requires a reboot."
                 $script:RebootRequired = $true
             } else {
-                Write-Log "Windows Updates complete. No reboot required by WU."
+                Write-Log "Windows Update completed without requiring reboot."
             }
         } catch {
-            Write-Log "Could not verify WU reboot status (continuing): $_"
+            Write-Log "Could not read reboot status. Reboot may be required."
+            $script:RebootRequired = $true
         }
 
     } catch {
