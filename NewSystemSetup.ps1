@@ -1,5 +1,7 @@
 ##########################################################################################################################################################
-# Description: This script automates the setup process for new systems, including software installation, updates, and system configuration.              #
+# Description: Compu-TEK First-Time System Setup Tool (Smart Auto Mode)
+# - Option 1 does the full setup, auto-detects Dell, runs updates, enables QMR, logs secure boot, schedules memtest, reboots at the end.
+# - Option 2 keeps BitLocker manual.
 ##########################################################################################################################################################
 
 # Function: Set console text and background colors
@@ -13,7 +15,6 @@ Set-ConsoleColor 'green' 'white'
 # Log file setup
 $LogDirectory = "$env:APPDATA\Computek"
 $LogFile = "$LogDirectory\SetupLog.txt"
-
 if (-not (Test-Path -Path $LogDirectory)) {
     New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
 }
@@ -28,29 +29,12 @@ $asciiArt = @"
  #     # #    # #    # #      #    #          #    #      #   #  
   #####   ####  #    # #       ####           #    ###### #    # 
 "@
-Write-Host $asciiArt -ForegroundColor DarkBlue
+Write-Host $asciiArt -ForegroundColor Black
 Write-Host "Welcome to the System Management Script!"
-Write-Host "v1.3 (with Windows 11 25H2 Quick Machine Recovery support)"
+Write-Host "v2.0 (Smart Auto Mode + 25H2 Quick Machine Recovery support)"
 
-# Function: Display the main menu
-function Show-Menu {
-    Write-Host "=========================================="
-    Write-Host "       System Management Menu it worked"
-    Write-Host "=========================================="
-    Write-Host "1. First Time Dell Setup Routine (Default)"
-    Write-Host "2. First Time Other Setup Routine"
-    Write-Host "3. Upgrade to Windows Pro"
-    Write-Host "4. Install All Windows Updates (Default)"
-    Write-Host "5. Install All Windows Updates (Get me up to date)"
-    Write-Host "6. Enable BitLocker on C:"
-    Write-Host "7. Run Windows Memory Diagnostic"
-    Write-Host "8. Check Secure Boot Status"
-    Write-Host "9. Reboot to UEFI Firmware Settings"
-    Write-Host "10. Enable Quick Machine Recovery (25H2 Feature)"
-    Write-Host "11. Exit and Cleanup"
-    Write-Host "=========================================="
-    Write-Host "Press Enter to select the default option (1) or choose another option."
-}
+# Global reboot flag
+$script:RebootRequired = $false
 
 # Function: Log messages to file and console
 function Write-Log {
@@ -92,102 +76,8 @@ function Install-SyncroAgent {
     }
 }
 
-# Function: Configure hostname
-function Set-Hostname {
-    Write-Log "Setting system hostname..."
-    $brand = ((Get-WmiObject Win32_ComputerSystem).Manufacturer -split ' ')[0]
-    $serial = (Get-WmiObject -Class Win32_BIOS).SerialNumber
-    $newHostname = "$brand-$serial"
-
-    if ($env:COMPUTERNAME -ne $newHostname) {
-        Rename-Computer -NewName $newHostname -Force -Restart
-        Write-Log "Hostname set to $newHostname."
-    } else {
-        Write-Log "Hostname is already set to $newHostname."
-    }
-}
-
-# Function: Install Windows updates
-function Install-WindowsUpdates-GetMeUpToDate {
-    Write-Log "Enabling 'Get me up to date' behavior for Windows Updates..."
-
-    try {
-        if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
-            Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
-        }
-
-        Import-Module PSWindowsUpdate
-
-        Write-Log "Disabling active hours..."
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "SmartActiveHoursState" -Value 0 -Force
-
-        Write-Log "Scanning for available updates..."
-        $Updates = Get-WindowsUpdate -AcceptAll -Install -Verbose
-
-        if ($Updates) {
-            Write-Log "Updates installed successfully. Rebooting if necessary..."
-            Restart-Computer -Force -ErrorAction SilentlyContinue
-        } else {
-            Write-Log "No updates found or applicable."
-        }
-    } catch {
-        Write-Log "Error installing updates: $_"
-    }
-}
-
-# Function: Enable BitLocker
-function Enable-BitLockerDrive {
-    param (
-        [string]$DriveLetter = "C:",
-        [string]$RecoveryKeyPath = "C:\BitLockerRecoveryKey.txt"
-    )
-    if (Get-BitLockerVolume -MountPoint $DriveLetter | Where-Object { $_.ProtectionStatus -eq "On" }) {
-        Write-Log "BitLocker already enabled on $DriveLetter."
-    } else {
-        Enable-BitLocker -MountPoint $DriveLetter -EncryptionMethod XtsAes256 -UsedSpaceOnly -RecoveryKeyPath $RecoveryKeyPath -TpmProtector
-        Write-Log "BitLocker enabled on $DriveLetter. Recovery key saved at $RecoveryKeyPath."
-    }
-}
-
-# Function: Run Windows Memory Diagnostic
-function Run-MemoryDiagnostic {
-    Write-Host "Scheduling Windows Memory Diagnostic test..."
-    try {
-        Start-Process -FilePath "mdsched.exe" -ArgumentList "/restart"
-        Write-Log "Memory Diagnostic scheduled. The system will restart now."
-    } catch {
-        Write-Log "Failed to schedule Memory Diagnostic. Ensure administrative privileges."
-    }
-}
-
-# Function: Check Secure Boot
-function Check-SecureBootStatus {
-    try {
-        $secureBootState = Confirm-SecureBootUEFI
-        if ($secureBootState) {
-            Write-Host "Secure Boot is ENABLED." -ForegroundColor Green
-        } else {
-            Write-Host "Secure Boot is DISABLED." -ForegroundColor Red
-        }
-    } catch {
-        Write-Host "Secure Boot not supported or not in UEFI mode." -ForegroundColor Yellow
-    }
-}
-
-# Function: Reboot to UEFI
-function Reboot-ToUEFI {
-    Write-Host "Rebooting into UEFI Firmware Settings..." -ForegroundColor Cyan
-    try {
-        Shutdown.exe /r /fw /t 0
-        Write-Log "System restarting to UEFI firmware settings."
-    } catch {
-        Write-Log "Failed to restart to UEFI firmware settings."
-    }
-}
-
-# Function: Install Dell Command | Update
-function Install-DellCommandUpdate {
-    Write-Log "Checking if Chocolatey is installed..."
+# Function: Ensure Chocolatey Installed
+function Ensure-Chocolatey {
     if (-not (Get-Command "choco" -ErrorAction SilentlyContinue)) {
         Write-Log "Chocolatey not found. Installing..."
         try {
@@ -197,14 +87,29 @@ function Install-DellCommandUpdate {
             Write-Log "Chocolatey installed successfully."
         } catch {
             Write-Log "Failed to install Chocolatey: $_"
-            return $false
+            throw
         }
     } else {
         Write-Log "Chocolatey is already installed."
     }
+}
 
-    Write-Log "Installing Dell Command | Update via Chocolatey..."
+# Function: Detect if system is Dell
+function Is-DellSystem {
     try {
+        $mfg = (Get-CimInstance Win32_ComputerSystem).Manufacturer
+        return ($mfg -match "Dell")
+    } catch {
+        Write-Log "Could not determine manufacturer: $_"
+        return $false
+    }
+}
+
+# Function: Install Dell Command | Update (Dell only)
+function Install-DellCommandUpdate {
+    Write-Log "Dell detected. Installing Dell Command | Update..."
+    try {
+        Ensure-Chocolatey
         Start-Process "choco" -ArgumentList "install dellcommandupdate -y" -NoNewWindow -Wait
         Write-Log "Dell Command | Update installed successfully."
         return $true
@@ -216,24 +121,9 @@ function Install-DellCommandUpdate {
 
 # Function: Install software packages
 function Install-SoftwarePackages {
-    Write-Log "Checking if Chocolatey is installed..."
-    if (-not (Get-Command "choco" -ErrorAction SilentlyContinue)) {
-        Write-Log "Chocolatey not found. Installing..."
-        try {
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-            Write-Log "Chocolatey installed successfully."
-        } catch {
-            Write-Log "Failed to install Chocolatey: $_"
-            return $false
-        }
-    } else {
-        Write-Log "Chocolatey is already installed."
-    }
-
     Write-Log "Installing software packages via Chocolatey..."
     try {
+        Ensure-Chocolatey
         Start-Process "choco" -ArgumentList "install googlechrome adobereader -y" -NoNewWindow -Wait
         Write-Log "Software packages installed successfully."
         return $true
@@ -243,9 +133,116 @@ function Install-SoftwarePackages {
     }
 }
 
-# ==========================================
-# NEW FUNCTION: Enable Quick Machine Recovery (25H2)
-# ==========================================
+# Function: Configure hostname (NO reboot here)
+function Set-Hostname {
+    Write-Log "Setting system hostname..."
+    $brand = ((Get-CimInstance Win32_ComputerSystem).Manufacturer -split ' ')[0]
+    $serial = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber
+    $newHostname = "$brand-$serial"
+
+    if ($env:COMPUTERNAME -ne $newHostname) {
+        try {
+            Rename-Computer -NewName $newHostname -Force
+            Write-Log "Hostname set to $newHostname. (Reboot required later)"
+            $script:RebootRequired = $true
+        } catch {
+            Write-Log "Failed to rename computer: $_"
+        }
+    } else {
+        Write-Log "Hostname is already set to $newHostname."
+    }
+}
+
+# Function: Install Windows updates (Get me up to date) - NO reboot here
+function Install-WindowsUpdates-GetMeUpToDate {
+    Write-Log "Enabling 'Get me up to date' behavior for Windows Updates..."
+
+    try {
+        if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
+            Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
+        }
+        Import-Module PSWindowsUpdate
+
+        Write-Log "Disabling active hours..."
+        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "SmartActiveHoursState" -Value 0 -Force
+
+        Write-Log "Scanning for available updates..."
+        Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot -Verbose | Out-Null
+
+        # Check if reboot is needed
+        try {
+            $rebootStatus = Get-WURebootStatus -Silent
+            if ($rebootStatus.RebootRequired) {
+                Write-Log "Windows Updates indicate a reboot is required."
+                $script:RebootRequired = $true
+            } else {
+                Write-Log "Windows Updates complete. No reboot required by WU."
+            }
+        } catch {
+            Write-Log "Could not verify WU reboot status (continuing): $_"
+        }
+
+    } catch {
+        Write-Log "Error installing updates: $_"
+    }
+}
+
+# Function: Enable BitLocker (Manual option remains)
+function Enable-BitLockerDrive {
+    param (
+        [string]$DriveLetter = "C:",
+        [string]$RecoveryKeyPath = "C:\BitLockerRecoveryKey.txt"
+    )
+    try {
+        if (Get-BitLockerVolume -MountPoint $DriveLetter | Where-Object { $_.ProtectionStatus -eq "On" }) {
+            Write-Log "BitLocker already enabled on $DriveLetter."
+        } else {
+            Enable-BitLocker -MountPoint $DriveLetter -EncryptionMethod XtsAes256 -UsedSpaceOnly -RecoveryKeyPath $RecoveryKeyPath -TpmProtector
+            Write-Log "BitLocker enabled on $DriveLetter. Recovery key saved at $RecoveryKeyPath."
+        }
+    } catch {
+        Write-Log "Failed to enable BitLocker: $_"
+    }
+}
+
+# Function: Run Windows Memory Diagnostic (scheduled, no reboot here)
+function Run-MemoryDiagnostic {
+    Write-Log "Scheduling Windows Memory Diagnostic test..."
+    try {
+        Start-Process -FilePath "mdsched.exe" -ArgumentList "/restart" -WindowStyle Hidden
+        Write-Log "Memory Diagnostic scheduled for next reboot."
+        $script:RebootRequired = $true
+    } catch {
+        Write-Log "Failed to schedule Memory Diagnostic. Ensure administrative privileges."
+    }
+}
+
+# Function: Check Secure Boot (logged in Option 1)
+function Check-SecureBootStatus {
+    try {
+        $secureBootState = Confirm-SecureBootUEFI
+        if ($secureBootState) {
+            Write-Log "Secure Boot is ENABLED."
+        } else {
+            Write-Log "Secure Boot is DISABLED."
+        }
+    } catch {
+        Write-Log "Secure Boot not supported or not in UEFI mode."
+    }
+}
+
+# Function: Reboot to UEFI (manual option)
+function Reboot-ToUEFI {
+    Write-Host "Rebooting into UEFI Firmware Settings..." -ForegroundColor Cyan
+    try {
+        Shutdown.exe /r /fw /t 0
+        Write-Log "System restarting to UEFI firmware settings."
+    } catch {
+        Write-Log "Failed to restart to UEFI firmware settings."
+    }
+}
+
+# Function: Enable Quick Machine Recovery (25H2+) - no reboot required
 function Enable-QuickMachineRecovery {
     Write-Log "Checking Windows version for Quick Machine Recovery support..."
 
@@ -254,7 +251,7 @@ function Enable-QuickMachineRecovery {
         $osBuildInt = [int]$osBuild
 
         if ($osBuildInt -lt 26100) {
-            Write-Log "Quick Machine Recovery requires Windows 11 25H2 (build 26100 or later). Current build: $osBuildInt"
+            Write-Log "Quick Machine Recovery requires Windows 11 25H2 (build 26100+). Current build: $osBuildInt"
             return
         }
 
@@ -264,9 +261,9 @@ function Enable-QuickMachineRecovery {
         $feature = (dism /online /Get-FeatureInfo /FeatureName:QuickMachineRecovery | Select-String "State : Enabled")
         if ($feature) {
             Write-Log "✅ Quick Machine Recovery successfully enabled."
-            Write-Host "Quick Machine Recovery is now active on this device." -ForegroundColor Green
         } else {
-            Write-Log "⚠️  Could not verify Quick Machine Recovery enablement. A reboot may be required."
+            Write-Log "⚠️  Could not verify QMR enablement. A reboot may be required."
+            $script:RebootRequired = $true
         }
     }
     catch {
@@ -275,22 +272,71 @@ function Enable-QuickMachineRecovery {
 }
 
 # ==========================================
+# OPTION 1: SMART FIRST-TIME SETUP
+# ==========================================
+function Run-SmartFirstTimeSetup {
+    Write-Log "=== Running Smart First-Time Setup Routine ==="
+
+    Install-SyncroAgent
+
+    if (Is-DellSystem) {
+        Install-DellCommandUpdate | Out-Null
+    } else {
+        Write-Log "Non-Dell system detected. Skipping Dell Command | Update."
+    }
+
+    Install-SoftwarePackages | Out-Null
+    Set-Hostname
+    Enable-QuickMachineRecovery
+    Install-WindowsUpdates-GetMeUpToDate
+    Check-SecureBootStatus
+    Run-MemoryDiagnostic
+
+    # Cleanup tasks previously on Exit
+    try {
+        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "SmartActiveHoursState" -Value 1 -Force
+        Write-Log "Active hours restored to default behavior."
+    } catch {
+        Write-Log "Could not restore active hours setting: $_"
+    }
+
+    Remove-DesktopShortcut -ShortcutName "Computek Setup Script"
+
+    Write-Log "=== Smart Setup Complete ==="
+
+    if ($script:RebootRequired) {
+        Write-Log "Reboot required. System will reboot in 10 seconds..."
+        shutdown /r /t 10
+    } else {
+        Write-Log "No reboot required. You may reboot manually when convenient."
+    }
+}
+
+# Function: Display the main menu
+function Show-Menu {
+    Write-Host "=========================================="
+    Write-Host "       System Management Menu"
+    Write-Host "=========================================="
+    Write-Host "1. First Time Setup (Smart Auto Mode) [Default]"
+    Write-Host "2. Enable BitLocker on C:"
+    Write-Host "3. Run Windows Memory Diagnostic (Manual)"
+    Write-Host "4. Reboot to UEFI Firmware Settings"
+    Write-Host "5. Exit"
+    Write-Host "=========================================="
+    Write-Host "Press Enter to select the default option (1) or choose another option."
+}
+
+# ==========================================
 # MENU HANDLER
 # ==========================================
 function MenuSelection {
     param ([int]$selection)
     switch ($selection) {
-        1  { Write-Log "Running First Time Dell Setup..."; Install-SyncroAgent; Install-DellCommandUpdate; Install-SoftwarePackages; Set-Hostname }
-        2  { Write-Log "Running First Time Other Setup..."; Install-SyncroAgent; Install-SoftwarePackages; Set-Hostname }
-        3  { Write-Log "Upgrading to Windows Pro..."; Get-BiosProductKeyAndActivate }
-        4  { Write-Log "Installing all Windows updates..."; Install-WindowsUpdates }
-        5  { Write-Log "Installing Windows updates with 'Get me up to date' feature..."; Install-WindowsUpdates-GetMeUpToDate }
-        6  { Write-Log "Enabling BitLocker on C: drive..."; Enable-BitLockerDrive }
-        7  { Write-Log "Running Windows Memory Diagnostic..."; Run-MemoryDiagnostic }
-        8  { Write-Log "Checking Secure Boot status..."; Check-SecureBootStatus }
-        9  { Write-Log "Rebooting to UEFI Firmware Settings..."; Reboot-ToUEFI }
-        10 { Write-Log "Enabling Quick Machine Recovery feature..."; Enable-QuickMachineRecovery }
-        11 { Write-Log "Exiting script and cleaning up..."; Remove-DesktopShortcut -ShortcutName "Computek Setup Script"; Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "SmartActiveHoursState" -Value 1 -Force; exit }
+        1  { Run-SmartFirstTimeSetup }
+        2  { Write-Log "Enabling BitLocker on C: drive..."; Enable-BitLockerDrive }
+        3  { Write-Log "Running Windows Memory Diagnostic..."; Run-MemoryDiagnostic }
+        4  { Write-Log "Rebooting to UEFI Firmware Settings..."; Reboot-ToUEFI }
+        5  { Write-Log "Exiting script..."; exit }
         default { Write-Log "Invalid selection. Please choose a valid option." }
     }
 }
@@ -305,9 +351,9 @@ if (-not ([Security.Principal.WindowsPrincipal]([Security.Principal.WindowsIdent
 
 do {
     Show-Menu
-    $choice = Read-Host "Enter your choice (1-11) [Default: 1]"
-    
-    if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le 11) {
+    $choice = Read-Host "Enter your choice (1-5) [Default: 1]"
+
+    if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le 5) {
         $choice = [int]$choice
     } else {
         $choice = 1
@@ -316,4 +362,3 @@ do {
     MenuSelection -selection $choice
     Pause
 } while ($true)
-
