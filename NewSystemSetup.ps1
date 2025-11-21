@@ -1,9 +1,9 @@
 ##########################################################################################################################################################
 # Description: Compu-TEK First-Time System Setup Tool (Smart Auto Mode)
-# - Option 1 does the full setup, auto-detects Dell, triggers Windows Updates via supported native 25H2 methods,
-#   enables QMR (registry), logs secure boot, schedules memtest, and reboots at the end.
-# - Option 2 keeps BitLocker manual.
-# - Cleanup happens ONLY on Exit (Option 5). Active Hours are never modified.
+# - Option 1 does the full setup, auto-detects Dell, triggers Windows Updates using native 25H2 methods,
+#   shows Windows Update UI for live progress, enables QMR, logs secure boot, schedules memtest.
+# - NO forced reboot. Tech decides when to reboot.
+# - Cleanup happens ONLY on Exit (Option 5).
 ##########################################################################################################################################################
 
 function Set-ConsoleColor ($bc, $fc) {
@@ -30,7 +30,7 @@ $asciiArt = @"
 "@
 Write-Host $asciiArt -ForegroundColor Black
 Write-Host "Welcome to the System Management Script!"
-Write-Host "v2.4 (Smart Auto Mode + Native 25H2 Update Engine + QMR Registry Enable)"
+Write-Host "v2.5 (Live Update UI + Native Update Engine + No Auto Reboot + QMR Registry Enable)"
 
 $script:RebootRequired = $false
 
@@ -47,49 +47,45 @@ function Remove-DesktopShortcut {
         [Parameter(Mandatory = $true)]
         [string]$ShortcutName
     )
-    $desktopPath = [Environment]::GetFolderPath("Desktop")
-    $shortcutPath = Join-Path -Path $desktopPath -ChildPath "$ShortcutName.lnk"
-    if (Test-Path $shortcutPath) {
-        Remove-Item -Path $shortcutPath -Force
-        Write-Log "Shortcut '$ShortcutName' deleted from the desktop."
-    } else {
-        Write-Log "Shortcut '$ShortcutName' not found on the desktop."
+    $desktop = [Environment]::GetFolderPath("Desktop")
+    $shortcut = Join-Path $desktop "$ShortcutName.lnk"
+    if (Test-Path $shortcut) {
+        Remove-Item $shortcut -Force
+        Write-Log "Removed desktop shortcut: $ShortcutName"
     }
 }
 
 function Install-SyncroAgent {
     Write-Log "Installing Syncro Agent..."
     if (-not (Get-Service -Name "Syncro" -ErrorAction SilentlyContinue)) {
-        $Url = "https://rmm.syncromsp.com/dl/rs/djEtMzEzMDA4ODgtMTc0MDA3NjY3NC02OTUzMi00MjM4ODUy"
-        $SavePath = "C:\Windows\Temp\SyncroSetup.exe"
-        $FileArguments = "--console --customerid 1362064 --folderid 4238852"
+        $url = "https://rmm.syncromsp.com/dl/rs/djEtMzEzMDA4ODgtMTc0MDA3NjY3NC02OTUzMi00MjM4ODUy"
+        $path = "C:\Windows\Temp\SyncroSetup.exe"
+        $args = "--console --customerid 1362064 --folderid 4238852"
 
         try {
-            Invoke-WebRequest -Uri $Url -OutFile $SavePath -UseBasicParsing
-            Start-Process -FilePath $SavePath -ArgumentList $FileArguments -Wait
-            Write-Log "Syncro Agent installed successfully."
+            Invoke-WebRequest -Uri $url -OutFile $path -UseBasicParsing
+            Start-Process $path -ArgumentList $args -Wait
+            Write-Log "Syncro Agent installed."
         } catch {
-            Write-Log "Failed to install Syncro Agent: $_"
+            Write-Log "Syncro install failed: $_"
         }
     } else {
-        Write-Log "Syncro Agent is already installed."
+        Write-Log "Syncro Agent already installed."
     }
 }
 
 function Ensure-Chocolatey {
     if (-not (Get-Command "choco" -ErrorAction SilentlyContinue)) {
-        Write-Log "Chocolatey not found. Installing..."
+        Write-Log "Installing Chocolatey..."
         try {
             Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
             Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-            Write-Log "Chocolatey installed successfully."
+            Write-Log "Chocolatey installed."
         } catch {
-            Write-Log "Failed to install Chocolatey: $_"
-            throw
+            Write-Log "Chocolatey install error: $_"
         }
     } else {
-        Write-Log "Chocolatey is already installed."
+        Write-Log "Chocolatey already installed."
     }
 }
 
@@ -98,61 +94,59 @@ function Is-DellSystem {
         $mfg = (Get-CimInstance Win32_ComputerSystem).Manufacturer
         return ($mfg -match "Dell")
     } catch {
-        Write-Log "Could not determine manufacturer: $_"
+        Write-Log "Unable to detect manufacturer."
         return $false
     }
 }
 
 function Install-DellCommandUpdate {
-    Write-Log "Dell detected. Installing Dell Command | Update..."
+    Write-Log "Installing Dell Command | Update..."
     try {
         Ensure-Chocolatey
         Start-Process "choco" -ArgumentList "install dellcommandupdate -y" -NoNewWindow -Wait
-        Write-Log "Dell Command | Update installed successfully."
-        return $true
+        Write-Log "Dell Command | Update installed."
     } catch {
-        Write-Log "Failed to install Dell Command | Update: $_"
-        return $false
+        Write-Log "Dell Command install error: $_"
     }
 }
 
 function Install-SoftwarePackages {
-    Write-Log "Installing software packages via Chocolatey..."
+    Write-Log "Installing software (Chrome, Adobe Reader)..."
     try {
         Ensure-Chocolatey
         Start-Process "choco" -ArgumentList "install googlechrome adobereader -y" -NoNewWindow -Wait
-        Write-Log "Software packages installed successfully."
-        return $true
+        Write-Log "Software installed."
     } catch {
-        Write-Log "Failed to install software packages: $_"
-        return $false
+        Write-Log "Software install error: $_"
     }
 }
 
 function Set-Hostname {
-    Write-Log "Setting system hostname..."
+    Write-Log "Configuring hostname..."
     $brand = ((Get-CimInstance Win32_ComputerSystem).Manufacturer -split ' ')[0]
     $serial = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber
-    $newHostname = "$brand-$serial"
+    $new = "$brand-$serial"
 
-    if ($env:COMPUTERNAME -ne $newHostname) {
+    if ($env:COMPUTERNAME -ne $new) {
         try {
-            Rename-Computer -NewName $newHostname -Force
-            Write-Log "Hostname set to $newHostname. (Reboot required later)"
+            Rename-Computer -NewName $new -Force
+            Write-Log "Set hostname to $new (reboot required later)."
             $script:RebootRequired = $true
         } catch {
-            Write-Log "Failed to rename computer: $_"
+            Write-Log "Hostname change failed: $_"
         }
     } else {
-        Write-Log "Hostname is already set to $newHostname."
+        Write-Log "Hostname already correct."
     }
 }
 
+###############################################################################################################
+# ⭐ **Native Windows Updates + Opens Windows Update UI for Live Progress**
+###############################################################################################################
 function Install-WindowsUpdates-GetMeUpToDate {
-    Write-Log "Starting Windows Updates using supported 25H2 native methods..."
+    Write-Log "Initializing Windows Update..."
 
     try {
-        Write-Log "Resetting Windows Update components..."
         Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
         Stop-Service bits -Force -ErrorAction SilentlyContinue
 
@@ -161,131 +155,95 @@ function Install-WindowsUpdates-GetMeUpToDate {
 
         Start-Service wuauserv -ErrorAction SilentlyContinue
         Start-Service bits -ErrorAction SilentlyContinue
-        Write-Log "Windows Update components reset."
 
-        Write-Log "Triggering StartScan..."
+        Write-Log "Triggering update scan..."
         Start-Process "UsoClient.exe" -ArgumentList "StartScan" -WindowStyle Hidden
 
-        Write-Log "Triggering ScanInstallWait (25H2 method)..."
-        Start-Process "UsoClient.exe" -ArgumentList "ScanInstallWait" -WindowStyle Hidden
+        Write-Log "Triggering install..."
+        Start-Process "UsoClient.exe" -ArgumentList "StartInstall" -WindowStyle Hidden
 
-        Write-Log "Triggering StartInteractiveScan..."
-        Start-Process "UsoClient.exe" -ArgumentList "StartInteractiveScan" -WindowStyle Hidden
+        Write-Log "Opening Windows Update UI for real-time progress..."
+        Start-Process "ms-settings:windowsupdate"
 
-        Write-Log "Attempting ResumeUpdate..."
-        Start-Process "UsoClient.exe" -ArgumentList "ResumeUpdate" -WindowStyle Hidden
+        Write-Log "Windows Update running in background with UI visible."
 
-        Write-Log "Updates requested. Windows will continue in background through reboot."
         $script:RebootRequired = $true
-    }
-    catch {
-        Write-Log "Windows Update trigger failed: $_"
-    }
-}
 
-function Enable-BitLockerDrive {
-    param (
-        [string]$DriveLetter = "C:",
-        [string]$RecoveryKeyPath = "C:\BitLockerRecoveryKey.txt"
-    )
-    try {
-        if (Get-BitLockerVolume -MountPoint $DriveLetter | Where-Object { $_.ProtectionStatus -eq "On" }) {
-            Write-Log "BitLocker already enabled on $DriveLetter."
-        } else {
-            Enable-BitLocker -MountPoint $DriveLetter -EncryptionMethod XtsAes256 -UsedSpaceOnly -RecoveryKeyPath $RecoveryKeyPath -TpmProtector
-            Write-Log "BitLocker enabled on $DriveLetter. Recovery key saved at $RecoveryKeyPath."
-        }
     } catch {
-        Write-Log "Failed to enable BitLocker: $_"
+        Write-Log "Update engine error: $_"
     }
 }
 
 function Run-MemoryDiagnostic {
-    Write-Log "Scheduling Windows Memory Diagnostic test..."
+    Write-Log "Scheduling Memory Diagnostic..."
     try {
-        Start-Process -FilePath "mdsched.exe" -ArgumentList "/restart" -WindowStyle Hidden
-        Write-Log "Memory Diagnostic scheduled for next reboot."
+        Start-Process "mdsched.exe" -ArgumentList "/restart" -WindowStyle Hidden
+        Write-Log "Memory test scheduled for next reboot."
         $script:RebootRequired = $true
     } catch {
-        Write-Log "Failed to schedule Memory Diagnostic. Ensure administrative privileges."
+        Write-Log "Memory Diagnostic scheduling error: $_"
     }
 }
 
 function Check-SecureBootStatus {
     try {
-        $secureBootState = Confirm-SecureBootUEFI
-        if ($secureBootState) {
-            Write-Log "Secure Boot is ENABLED."
-        } else {
-            Write-Log "Secure Boot is DISABLED."
-        }
+        $val = Confirm-SecureBootUEFI
+        if ($val) { Write-Log "Secure Boot ENABLED." }
+        else { Write-Log "Secure Boot DISABLED." }
     } catch {
-        Write-Log "Secure Boot not supported or not in UEFI mode."
+        Write-Log "Secure Boot not supported."
     }
 }
 
-function Reboot-ToUEFI {
-    Write-Host "Rebooting into UEFI Firmware Settings..." -ForegroundColor Cyan
-    try {
-        Shutdown.exe /r /fw /t 0
-        Write-Log "System restarting to UEFI firmware settings."
-    } catch {
-        Write-Log "Failed to restart to UEFI firmware settings."
-    }
-}
-
+###############################################################################################################
+# ⭐ **Quick Machine Recovery (Registry)**  
+###############################################################################################################
 function Enable-QuickMachineRecovery {
-    Write-Log "Applying Quick Machine Recovery registry settings..."
+    Write-Log "Applying Quick Machine Recovery registry keys..."
 
-    try {
-        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Reliability\QuickRecovery"
+    $reg = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Reliability\QuickRecovery"
 
-        if (-not (Test-Path $regPath)) {
-            New-Item -Path $regPath -Force | Out-Null
-        }
-
-        Set-ItemProperty -Path $regPath -Name "QuickRecoveryEnabled" -Value 1 -Type DWord
-        Set-ItemProperty -Path $regPath -Name "ContinueSearchingEnabled" -Value 1 -Type DWord
-        Set-ItemProperty -Path $regPath -Name "LookForSolutionEvery" -Value 0 -Type DWord
-        Set-ItemProperty -Path $regPath -Name "RestartEvery" -Value 0 -Type DWord
-
-        Write-Log "Quick Machine Recovery registry configuration applied."
-        Write-Log "QMR will appear ENABLED after updates + final reboot."
-        $script:RebootRequired = $true
-
-    } catch {
-        Write-Log "Error enabling Quick Machine Recovery: $_"
+    if (-not (Test-Path $reg)) {
+        New-Item -Path $reg -Force | Out-Null
     }
+
+    Set-ItemProperty -Path $reg -Name "QuickRecoveryEnabled" -Value 1 -Type DWord
+    Set-ItemProperty -Path $reg -Name "ContinueSearchingEnabled" -Value 1 -Type DWord
+    Set-ItemProperty -Path $reg -Name "LookForSolutionEvery" -Value 0 -Type DWord
+    Set-ItemProperty -Path $reg -Name "RestartEvery" -Value 0 -Type DWord
+
+    Write-Log "QMR registry settings applied. Toggle requires reboot after updates."
+
+    $script:RebootRequired = $true
 }
 
+###############################################################################################################
+# ⭐ **SMART FIRST TIME SETUP**
+###############################################################################################################
 function Run-SmartFirstTimeSetup {
-    Write-Log "=== Running Smart First-Time Setup Routine ==="
+    Write-Log "===== Running Smart Auto Setup ====="
 
     Install-SyncroAgent
 
-    if (Is-DellSystem) {
-        Install-DellCommandUpdate | Out-Null
-    } else {
-        Write-Log "Non-Dell system detected. Skipping Dell Command | Update."
-    }
+    if (Is-DellSystem) { Install-DellCommandUpdate }
+    else { Write-Log "Non-Dell detected: Skipping Dell Command Update." }
 
-    Install-SoftwarePackages | Out-Null
+    Install-SoftwarePackages
     Set-Hostname
     Enable-QuickMachineRecovery
     Install-WindowsUpdates-GetMeUpToDate
     Check-SecureBootStatus
     Run-MemoryDiagnostic
 
-    Write-Log "=== Smart Setup Complete ==="
-
-    if ($script:RebootRequired) {
-        Write-Log "Reboot required. System will reboot in 10 seconds..."
-        shutdown /r /t 10
-    } else {
-        Write-Log "No reboot required. You may reboot manually when convenient."
-    }
+    Write-Log "===== Setup Complete. Reboot Recommended. ====="
+    Write-Host ""
+    Write-Host ">>> Setup is complete. Press ENTER after reviewing update progress."
+    Pause
 }
 
+###############################################################################################################
+# MENU
+###############################################################################################################
 function Show-Menu {
     Write-Host "=========================================="
     Write-Host "       System Management Menu"
@@ -296,45 +254,34 @@ function Show-Menu {
     Write-Host "4. Reboot to UEFI Firmware Settings"
     Write-Host "5. Exit and Cleanup"
     Write-Host "=========================================="
-    Write-Host "Press Enter to select the default option (1) or choose another option."
 }
 
 function MenuSelection {
     param ([int]$selection)
+
     switch ($selection) {
         1  { Run-SmartFirstTimeSetup }
-        2  { Write-Log "Enabling BitLocker on C: drive..."; Enable-BitLockerDrive }
-        3  { Write-Log "Running Windows Memory Diagnostic..."; Run-MemoryDiagnostic }
-        4  { Write-Log "Rebooting to UEFI Firmware Settings..."; Reboot-ToUEFI }
-        5  {
-            Write-Log "Performing cleanup tasks before exit..."
-            try {
-                Remove-DesktopShortcut -ShortcutName "Computek Setup Script"
-            } catch {
-                Write-Log "Cleanup encountered an error: $_"
-            }
-            Write-Log "Exiting script..."
-            exit
-        }
-        default { Write-Log "Invalid selection. Please choose a valid option." }
+        2  { Enable-BitLockerDrive }
+        3  { Run-MemoryDiagnostic }
+        4  { Reboot-ToUEFI }
+        5  { Remove-DesktopShortcut -ShortcutName "Computek Setup Script"; exit }
+        default { Write-Log "Invalid selection." }
     }
 }
 
-if (-not ([Security.Principal.WindowsPrincipal]([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
-    Write-Log "Script requires administrator privileges. Exiting."
-    exit 1
+###############################################################################################################
+# MAIN
+###############################################################################################################
+if (-not ([Security.Principal.WindowsPrincipal]([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole(
+    [Security.Principal.WindowsBuiltinRole]::Administrator)) {
+    Write-Log "Administrator required. Exiting."
+    exit
 }
 
 do {
     Show-Menu
-    $choice = Read-Host "Enter your choice (1-5) [Default: 1]"
-
-    if ($choice -match '^\d+$' -and [int]$choice -ge 1 -and [int]$choice -le 5) {
-        $choice = [int]$choice
-    } else {
-        $choice = 1
-    }
-
+    $choice = Read-Host "Enter choice (1–5) [Default = 1]"
+    if ($choice -match '^\d+$') { $choice = [int]$choice } else { $choice = 1 }
     MenuSelection -selection $choice
     Pause
 } while ($true)
