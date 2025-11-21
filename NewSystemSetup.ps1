@@ -147,15 +147,7 @@ function Install-WindowsUpdates-GetMeUpToDate {
     Write-Log "Initializing Windows Update..."
 
     try {
-        Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
-        Stop-Service bits -Force -ErrorAction SilentlyContinue
-
-        Remove-Item "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item "C:\Windows\SoftwareDistribution\DataStore\*" -Recurse -Force -ErrorAction SilentlyContinue
-
-        Start-Service wuauserv -ErrorAction SilentlyContinue
-        Start-Service bits -ErrorAction SilentlyContinue
-
+        
         Write-Log "Triggering update scan..."
         Start-Process "UsoClient.exe" -ArgumentList "StartScan" -WindowStyle Hidden
 
