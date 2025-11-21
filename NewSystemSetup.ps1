@@ -243,7 +243,7 @@ function Reboot-ToUEFI {
 }
 
 # Function: Enable Quick Machine Recovery (25H2+) - no reboot required
-ffunction Enable-QuickMachineRecovery {
+function Enable-QuickMachineRecovery {
     Write-Log "Checking Windows version for Quick Machine Recovery support..."
 
     try {
