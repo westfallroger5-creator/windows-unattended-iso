@@ -1,7 +1,9 @@
 ##########################################################################################################################################################
 # Description: Compu-TEK First-Time System Setup Tool (Smart Auto Mode)
-# - Option 1 does the full setup, auto-detects Dell, runs updates, enables QMR, logs secure boot, schedules memtest, reboots at the end.
+# - Option 1 does the full setup, auto-detects Dell, runs updates, enables QMR, logs secure boot,
+#   schedules memtest, and reboots at the end (ONLY after all tasks).
 # - Option 2 keeps BitLocker manual.
+# - Cleanup happens ONLY on Exit (Option 5). Active Hours are never modified.
 ##########################################################################################################################################################
 
 # Function: Set console text and background colors
@@ -31,7 +33,7 @@ $asciiArt = @"
 "@
 Write-Host $asciiArt -ForegroundColor Black
 Write-Host "Welcome to the System Management Script!"
-Write-Host "v2.0 (Smart Auto Mode + 25H2 Quick Machine Recovery support)"
+Write-Host "v2.1 (Smart Auto Mode + Quick Machine Recovery registry enablement)"
 
 # Global reboot flag
 $script:RebootRequired = $false
@@ -45,7 +47,7 @@ function Write-Log {
     Write-Host $Message
 }
 
-# Function: Remove desktop shortcut
+# Function: Remove desktop shortcut (cleanup-only)
 function Remove-DesktopShortcut {
     param (
         [Parameter(Mandatory = $true)]
@@ -68,9 +70,14 @@ function Install-SyncroAgent {
         $Url = "https://rmm.syncromsp.com/dl/rs/djEtMzEzMDA4ODgtMTc0MDA3NjY3NC02OTUzMi00MjM4ODUy"
         $SavePath = "C:\Windows\Temp\SyncroSetup.exe"
         $FileArguments = "--console --customerid 1362064 --folderid 4238852"
-        Invoke-WebRequest -Uri $Url -OutFile $SavePath
-        Start-Process -FilePath $SavePath -ArgumentList $FileArguments -Wait
-        Write-Log "Syncro Agent installed successfully."
+
+        try {
+            Invoke-WebRequest -Uri $Url -OutFile $SavePath -UseBasicParsing
+            Start-Process -FilePath $SavePath -ArgumentList $FileArguments -Wait
+            Write-Log "Syncro Agent installed successfully."
+        } catch {
+            Write-Log "Failed to install Syncro Agent: $_"
+        }
     } else {
         Write-Log "Syncro Agent is already installed."
     }
@@ -153,28 +160,27 @@ function Set-Hostname {
     }
 }
 
-# Function: Install Windows updates (Get me up to date) - NO reboot here
+# Function: Install Windows updates (Get me up to date) - NO reboot here, NO Active Hours changes
 function Install-WindowsUpdates-GetMeUpToDate {
     Write-Log "Preparing Windows Update environment..."
 
     try {
-        # Reset WU components to prevent corrupt metadata issues
+        # Reset WU components to prevent corrupt metadata / fake huge downloads / hangs
         Write-Log "Resetting Windows Update components..."
-        Stop-Service wuauserv -Force
-        Stop-Service bits -Force
+        Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
+        Stop-Service bits -Force -ErrorAction SilentlyContinue
 
         Remove-Item -Recurse -Force "C:\Windows\SoftwareDistribution\Download\*" -ErrorAction SilentlyContinue
         Remove-Item -Recurse -Force "C:\Windows\SoftwareDistribution\DataStore\*" -ErrorAction SilentlyContinue
 
-        Start-Service wuauserv
-        Start-Service bits
+        Start-Service wuauserv -ErrorAction SilentlyContinue
+        Start-Service bits -ErrorAction SilentlyContinue
         Write-Log "Windows Update components reset."
 
         # Ensure PSWindowsUpdate is available
         if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
             Install-Module -Name PSWindowsUpdate -Force -Scope CurrentUser
         }
-
         Import-Module PSWindowsUpdate
 
         Write-Log "Scanning for updates..."
@@ -254,7 +260,7 @@ function Reboot-ToUEFI {
     }
 }
 
-# Function: Enable Quick Machine Recovery (25H2+) - no reboot required
+# Function: Enable Quick Machine Recovery (registry-based)
 function Enable-QuickMachineRecovery {
     Write-Log "Applying Quick Machine Recovery registry settings..."
 
@@ -272,14 +278,12 @@ function Enable-QuickMachineRecovery {
 
         Write-Log "Quick Machine Recovery registry configuration applied."
         Write-Log "QMR will appear ENABLED after the final reboot."
-
         $script:RebootRequired = $true
 
     } catch {
         Write-Log "Error enabling Quick Machine Recovery: $_"
     }
 }
-
 
 # ==========================================
 # OPTION 1: SMART FIRST-TIME SETUP
@@ -302,16 +306,6 @@ function Run-SmartFirstTimeSetup {
     Check-SecureBootStatus
     Run-MemoryDiagnostic
 
-    # Cleanup tasks previously on Exit
-    try {
-        Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings" -Name "SmartActiveHoursState" -Value 1 -Force
-        Write-Log "Active hours restored to default behavior."
-    } catch {
-        Write-Log "Could not restore active hours setting: $_"
-    }
-
-    Remove-DesktopShortcut -ShortcutName "Computek Setup Script"
-
     Write-Log "=== Smart Setup Complete ==="
 
     if ($script:RebootRequired) {
@@ -331,7 +325,7 @@ function Show-Menu {
     Write-Host "2. Enable BitLocker on C:"
     Write-Host "3. Run Windows Memory Diagnostic (Manual)"
     Write-Host "4. Reboot to UEFI Firmware Settings"
-    Write-Host "5. Exit"
+    Write-Host "5. Exit and Cleanup"
     Write-Host "=========================================="
     Write-Host "Press Enter to select the default option (1) or choose another option."
 }
@@ -346,7 +340,16 @@ function MenuSelection {
         2  { Write-Log "Enabling BitLocker on C: drive..."; Enable-BitLockerDrive }
         3  { Write-Log "Running Windows Memory Diagnostic..."; Run-MemoryDiagnostic }
         4  { Write-Log "Rebooting to UEFI Firmware Settings..."; Reboot-ToUEFI }
-        5  { Write-Log "Exiting script..."; exit }
+        5  {
+            Write-Log "Performing cleanup tasks before exit..."
+            try {
+                Remove-DesktopShortcut -ShortcutName "Computek Setup Script"
+            } catch {
+                Write-Log "Cleanup encountered an error: $_"
+            }
+            Write-Log "Exiting script..."
+            exit
+        }
         default { Write-Log "Invalid selection. Please choose a valid option." }
     }
 }
