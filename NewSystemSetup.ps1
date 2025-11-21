@@ -243,7 +243,7 @@ function Reboot-ToUEFI {
 }
 
 # Function: Enable Quick Machine Recovery (25H2+) - no reboot required
-function Enable-QuickMachineRecovery {
+ffunction Enable-QuickMachineRecovery {
     Write-Log "Checking Windows version for Quick Machine Recovery support..."
 
     try {
@@ -255,18 +255,33 @@ function Enable-QuickMachineRecovery {
             return
         }
 
-        Write-Log "Enabling Quick Machine Recovery feature..."
+        Write-Log "Enabling Quick Machine Recovery feature via DISM..."
         Start-Process -FilePath "dism.exe" -ArgumentList "/Online /Enable-Feature /FeatureName:QuickMachineRecovery /All /Quiet /NoRestart" -Wait -NoNewWindow
 
-        $feature = (dism /online /Get-FeatureInfo /FeatureName:QuickMachineRecovery | Select-String "State : Enabled")
-        if ($feature) {
-            Write-Log "✅ Quick Machine Recovery successfully enabled."
+        Write-Log "Setting Quick Machine Recovery registry configuration..."
+        $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Reliability\QuickRecovery"
+
+        if (-not (Test-Path $regPath)) {
+            New-Item -Path $regPath -Force | Out-Null
+        }
+
+        Set-ItemProperty -Path $regPath -Name "QuickRecoveryEnabled" -Value 1 -Type DWord
+        Set-ItemProperty -Path $regPath -Name "ContinueSearchingEnabled" -Value 1 -Type DWord
+        Set-ItemProperty -Path $regPath -Name "LookForSolutionEvery" -Value 0 -Type DWord
+        Set-ItemProperty -Path $regPath -Name "RestartEvery" -Value 0 -Type DWord
+
+        Write-Log "Quick Machine Recovery registry configuration applied."
+
+        # Verify activation
+        $qmrEnabled = Get-ItemProperty -Path $regPath -Name QuickRecoveryEnabled -ErrorAction SilentlyContinue
+        if ($qmrEnabled.QuickRecoveryEnabled -eq 1) {
+            Write-Log "✅ Quick Machine Recovery fully enabled (UI toggle should now show ON after reboot)."
         } else {
-            Write-Log "⚠️  Could not verify QMR enablement. A reboot may be required."
+            Write-Log "⚠️ Could not verify registry-level enablement. A reboot may be required."
             $script:RebootRequired = $true
         }
-    }
-    catch {
+
+    } catch {
         Write-Log "Error enabling Quick Machine Recovery: $_"
     }
 }
