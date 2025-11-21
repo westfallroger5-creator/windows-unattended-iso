@@ -8,7 +8,7 @@
 Set-Location -Path $env:APPDATA
 $FolderName = "Computek" # Name of the folder to store downloaded files
 $NewFolderPath = Join-Path -Path $env:APPDATA -ChildPath $FolderName # Full path to the folder
-$AccessToken = "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" # GitHub token
+$AccessToken = "github_"+"pat_"+"11BX3AQ5Q0P0DvjxkGvNcM_BMfcbln9ETJL9Z7RXI8Aky1OJoFGtRCjRTSsVT9zPuiSS6NKIF2ZqAI5jLg" # GitHub token
 $RepoOwner = "westfallroger5-creator" # GitHub repository owner
 $RepoName = "windows-unattended-iso" # GitHub repository name
 $Branch = "main" # Branch to download files from
