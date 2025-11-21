@@ -244,21 +244,9 @@ function Reboot-ToUEFI {
 
 # Function: Enable Quick Machine Recovery (25H2+) - no reboot required
 function Enable-QuickMachineRecovery {
-    Write-Log "Checking Windows version for Quick Machine Recovery support..."
+    Write-Log "Applying Quick Machine Recovery registry settings..."
 
     try {
-        $osBuild = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion").CurrentBuildNumber
-        $osBuildInt = [int]$osBuild
-
-        if ($osBuildInt -lt 26100) {
-            Write-Log "Quick Machine Recovery requires Windows 11 25H2 (build 26100+). Current build: $osBuildInt"
-            return
-        }
-
-        Write-Log "Enabling Quick Machine Recovery feature via DISM..."
-        Start-Process -FilePath "dism.exe" -ArgumentList "/Online /Enable-Feature /FeatureName:QuickMachineRecovery /All /Quiet /NoRestart" -Wait -NoNewWindow
-
-        Write-Log "Setting Quick Machine Recovery registry configuration..."
         $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Reliability\QuickRecovery"
 
         if (-not (Test-Path $regPath)) {
@@ -271,20 +259,15 @@ function Enable-QuickMachineRecovery {
         Set-ItemProperty -Path $regPath -Name "RestartEvery" -Value 0 -Type DWord
 
         Write-Log "Quick Machine Recovery registry configuration applied."
+        Write-Log "QMR will appear ENABLED after the final reboot."
 
-        # Verify activation
-        $qmrEnabled = Get-ItemProperty -Path $regPath -Name QuickRecoveryEnabled -ErrorAction SilentlyContinue
-        if ($qmrEnabled.QuickRecoveryEnabled -eq 1) {
-            Write-Log "✅ Quick Machine Recovery fully enabled (UI toggle should now show ON after reboot)."
-        } else {
-            Write-Log "⚠️ Could not verify registry-level enablement. A reboot may be required."
-            $script:RebootRequired = $true
-        }
+        $script:RebootRequired = $true
 
     } catch {
         Write-Log "Error enabling Quick Machine Recovery: $_"
     }
 }
+
 
 # ==========================================
 # OPTION 1: SMART FIRST-TIME SETUP
