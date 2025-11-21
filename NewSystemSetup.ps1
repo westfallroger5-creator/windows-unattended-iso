@@ -259,7 +259,7 @@ if (-not ([Security.Principal.WindowsPrincipal]([Security.Principal.WindowsIdent
 
 do {
     Show-Menu
-    $choice = Read-Host "Enter choice (1–5) [Default = 1]"
+    $choice = Read-Host "Enter choice (1-5) [Default = 1]"
     if ($choice -match '^\d+$') { $choice = [int]$choice } else { $choice = 1 }
     MenuSelection -selection $choice
     Pause
