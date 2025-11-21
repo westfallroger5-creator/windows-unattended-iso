@@ -9,7 +9,7 @@ Set-Location -Path $env:APPDATA
 # ========================
 $FolderName = "Computek" # Name of the folder to store downloaded files
 $NewFolderPath = Join-Path -Path $env:APPDATA -ChildPath $FolderName # Full path to the folder
-$AccessToken = "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" # GitHub token
+$AccessToken = "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" # GitHub token
 $RepoOwner = "westfallroger5-creator" # GitHub repository owner
 $RepoName = "windows-unattended-iso" # GitHub repository name
 $Branch = "main" # Branch to download files from
@@ -79,6 +79,7 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$NewFolderPath\NewSystemSetup.ps1`"" -Verb RunAs
     exit
 }
+
 
 
 
