@@ -133,8 +133,27 @@ function Install-SoftwarePackages {
     }
 
     try {
-        Start-Process "choco" -ArgumentList "install googlechrome -y --no-progress" -WindowStyle Hidden
-        Start-Process "choco" -ArgumentList "install adobereader -y --no-progress" -WindowStyle Hidden
+       function Install-SoftwarePackages {
+    Write-Host "Installing Chrome + Adobe Reader (visible, blocking)..."
+
+    if (-not (Ensure-Chocolatey)) {
+        Write-Host "Skipping software installs (Chocolatey missing)."
+        return
+    }
+
+    try {
+        Write-Host "`n=== Installing Google Chrome ==="
+        Start-Process "choco" -ArgumentList "install googlechrome -y" -NoNewWindow -Wait
+
+        Write-Host "`n=== Installing Adobe Reader ==="
+        Start-Process "choco" -ArgumentList "install adobereader -y" -NoNewWindow -Wait
+
+        Write-Host "`nAll Chocolatey installs completed successfully."
+    }
+    catch {
+        Write-Host "WARNING: One or more installs failed."
+    }
+}
         Write-Host "Chocolatey installs queued in background."
     } catch {
         Write-Host "WARNING: Failed to start Chocolatey installs. Continuing..."
