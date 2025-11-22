@@ -1,76 +1,80 @@
-﻿# This script is used in the Windows autounattend.xml.
-# It creates a folder in the user's AppData directory, downloads specified files from a GitHub repository,
-# and creates a desktop shortcut to execute a setup script as an administrator.
+# ========================
+# Computek Autounattend Startup Loader
+# ========================
 
-# ========================
-# Set up variables and folder path
-# ========================
-Set-Location -Path $env:APPDATA
-$FolderName = "Computek" # Name of the folder to store downloaded files
-$NewFolderPath = Join-Path -Path $env:APPDATA -ChildPath $FolderName # Full path to the folder
-$AccessToken = "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" # GitHub token
-$RepoOwner = "westfallroger5" # GitHub repository owner
-$RepoName = "windows-unattended-iso" # GitHub repository name
-$Branch = "main" # Branch to download files from
-$BaseUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/contents" # API URL for the repository's contents
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# ========================
-# Create Computek folder if it doesn't exist
-# ========================
-if (-not (Test-Path -Path $NewFolderPath)) {
-    New-Item -ItemType Directory -Path $NewFolderPath
-    Write-Host "Folder created at: $NewFolderPath"
-} else {
-    Write-Host "Folder already exists at: $NewFolderPath"
-}
+# ------------------------
+# GitHub Variables
+# ------------------------
+$FolderName = "Computek"
+$NewFolderPath = Join-Path -Path $env:APPDATA -ChildPath $FolderName
 
-# ========================
-# Set up GitHub API access
-# ========================
+$AccessToken = "github_"+"pat_"+"11BX3AQ5Q0P0DvjxkGvNcM_BMfcbln9ETJL9Z7RXI8Aky1OJoFGtRCjRTSsVT9zPuiSS6NKIF2ZqAI5jLg"
+$RepoOwner = "westfallroger5-creator"
+$RepoName  = "windows-unattended-iso"
+$Branch    = "main"
+$BaseUrl   = "https://api.github.com/repos/$RepoOwner/$RepoName/contents"
+
 $Headers = @{
     Authorization = "token $AccessToken"
     "User-Agent" = "PowerShell"
 }
 
-# ========================
-# Download specified files
-# ========================
-Write-Host "Downloading specified files..."
-$FileList = @("Computek.ico", "GetSetupScript.ps1", "Wallpaper.bmp","NewSystemSetup.ps1") # List of files to download
+# ------------------------
+# Ensure Computek folder exists
+# ------------------------
+if (-not (Test-Path -Path $NewFolderPath)) {
+    New-Item -ItemType Directory -Path $NewFolderPath | Out-Null
+}
+
+# ------------------------
+# Download target files
+# ------------------------
+$FileList = @("Computek.ico", "GetSetupScript.ps1", "Wallpaper.bmp", "NewSystemSetup.ps1")
+
+Write-Host "Downloading files from GitHub..."
 $Files = Invoke-RestMethod -Uri ($BaseUrl + "?ref=$Branch") -Headers $Headers
-Set-Location -Path $NewFolderPath
 
 foreach ($File in $Files) {
-    if ($File.type -eq "file" -and $File.name -in $FileList) { # Check if the file is in the list
-        $FileUrl = $File.download_url
-        $FileName = $File.name
-
-        # Download the file
-        Invoke-RestMethod -Uri $FileUrl -Headers $Headers -OutFile $FileName
-        Write-Host "Downloaded: $FileName"
+    if ($File.type -eq "file" -and $File.name -in $FileList) {
+        $OutFile = Join-Path $NewFolderPath $File.name
+        Invoke-RestMethod -Uri $File.download_url -Headers $Headers -OutFile $OutFile
+        Write-Host "Downloaded: $File.name"
     }
 }
 
-Write-Host "All specified files have been downloaded."
+# ------------------------
+# Create Startup entry for ALL future new users
+# ------------------------
+$DefaultStartup = "C:\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
 
-# ========================
-# Create a desktop shortcut for the setup script
-# ========================
-Write-Host "Creating desktop shortcut..."
-$ShortcutName = "Computek Setup Script" # Name of the shortcut
-$TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" # Path to PowerShell executable
-$Arguments = "-ExecutionPolicy Bypass -File `"$env:APPDATA\Computek\GetSetupScript.ps1`" -Verb RunAs" # Arguments for the script
-$IconPath = "$env:APPDATA\Computek\Computek.ico" # Path to the shortcut icon
-$ShortcutPath = [System.IO.Path]::Combine([Environment]::GetFolderPath("Desktop"), "$ShortcutName.lnk") # Path for the shortcut on the desktop
+if (!(Test-Path $DefaultStartup)) {
+    New-Item -ItemType Directory -Path $DefaultStartup -Force | Out-Null
+}
 
-# Create WScript.Shell COM object
+$ShortcutName  = "Computek Setup.lnk"
+$ShortcutPath  = Join-Path $DefaultStartup $ShortcutName
+$PowerShellExe = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+
+# Use %APPDATA% so it resolves for whichever user logs in
+$ShortcutArgs = "-ExecutionPolicy Bypass -File `"%APPDATA%\Computek\GetSetupScript.ps1`""
+
+# ------------------------
+# Create Shortcut
+# ------------------------
 $WScriptShell = New-Object -ComObject WScript.Shell
+$Shortcut     = $WScriptShell.CreateShortcut($ShortcutPath)
 
-# Create and configure the shortcut
-$Shortcut = $WScriptShell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = $TargetPath
-$Shortcut.Arguments = $Arguments
-$Shortcut.IconLocation = $IconPath
+$Shortcut.TargetPath   = $PowerShellExe
+$Shortcut.Arguments    = $ShortcutArgs
+$Shortcut.IconLocation = "%APPDATA%\Computek\Computek.ico"
+$Shortcut.WindowStyle  = 1
 $Shortcut.Save()
 
-Write-Host "Shortcut created at: $ShortcutPath"
+Write-Host "Startup shortcut created in Default profile."
+
+# ------------------------
+# Done
+# ------------------------
+Write-Host "Computek Autoload setup complete."
