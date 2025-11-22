@@ -56,9 +56,9 @@ function Install-SyncroAgent {
         $FileArguments = "--console --customerid 1362064 --folderid 4238852"
         Invoke-WebRequest -Uri $Url -OutFile $SavePath
         Start-Process -FilePath $SavePath -ArgumentList $FileArguments -Wait
-        Write-Log "Syncro Agent installed successfully."
+        Write-Host "Syncro Agent installed successfully."
     } else {
-        Write-Log "Syncro Agent is already installed."
+        Write-Host "Syncro Agent is already installed."
     }
 }
 
