@@ -47,21 +47,18 @@ function Remove-DesktopShortcut {
 # -----------------------------
 # Install Syncro Agent
 # -----------------------------
+# Function: Install Syncro Agent
 function Install-SyncroAgent {
-    Write-Host "Installing Syncro Agent..."
+    Write-Log "Installing Syncro Agent..."
     if (-not (Get-Service -Name "Syncro" -ErrorAction SilentlyContinue)) {
-        $url  = "https://rmm.syncromsp.com/dl/rs/djEtMzEzMDA4ODgtMTc0MDA3NjY3NC02OTUzMi00MjM4ODUy"
-        $path = "C:\Windows\Temp\SyncroSetup.exe"
-        $args = "--console --customerid 1362064 --folderid 4238852"
-        try {
-            Invoke-WebRequest -Uri $url -OutFile $path -UseBasicParsing
-            Start-Process $path -ArgumentList $args -Wait
-            Write-Host "Syncro Agent installed."
-        } catch {
-            Write-Host "WARNING: Syncro install failed. Continuing..."
-        }
+        $Url = "https://rmm.syncromsp.com/dl/rs/djEtMzEzMDA4ODgtMTc0MDA3NjY3NC02OTUzMi00MjM4ODUy"
+        $SavePath = "C:\Windows\Temp\SyncroSetup.exe"
+        $FileArguments = "--console --customerid 1362064 --folderid 4238852"
+        Invoke-WebRequest -Uri $Url -OutFile $SavePath
+        Start-Process -FilePath $SavePath -ArgumentList $FileArguments -Wait
+        Write-Log "Syncro Agent installed successfully."
     } else {
-        Write-Host "Syncro Agent already installed."
+        Write-Log "Syncro Agent is already installed."
     }
 }
 
