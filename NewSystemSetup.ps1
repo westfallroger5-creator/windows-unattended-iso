@@ -166,14 +166,21 @@ function Set-Hostname {
 # Windows Updates (ASYNC) + open UI
 # -----------------------------
 function Install-WindowsUpdates-Async {
-    Write-Host "Starting Windows Updates in background..."
+    Write-Host "Starting Windows Updates with visible UI..."
+
     try {
-        Start-Process "UsoClient.exe" -ArgumentList "StartScan" -WindowStyle Hidden
-        Start-Process "UsoClient.exe" -ArgumentList "StartInstall" -WindowStyle Hidden
+        # Open Windows Update settings UI
         Start-Process "ms-settings:windowsupdate"
-        Write-Host "Windows Update UI opened for live progress."
-    } catch {
-        Write-Host "WARNING: Failed to start Windows Updates. Continuing..."
+
+        Start-Sleep -Seconds 2
+
+        # Trigger scan *in the visible interface*
+        Start-Process "control.exe" -ArgumentList "/name Microsoft.WindowsUpdate"
+
+        Write-Host "Windows Update UI opened and scanning visibly."
+    }
+    catch {
+        Write-Host "WARNING: Failed to show Windows Update UI. Continuing..."
     }
 }
 
