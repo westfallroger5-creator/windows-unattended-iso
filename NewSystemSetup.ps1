@@ -127,33 +127,72 @@ Write-Host "   Compu-TEK Software Installer Window"
 Write-Host "   Chrome + Adobe Reader (with retry)"
 Write-Host "=========================================`n"
 
+# -----------------------
+# Verification Functions
+# -----------------------
+
+function Verify-Chrome {
+    return (Test-Path "C:\Program Files\Google\Chrome\Application\chrome.exe")
+}
+
+function Verify-Adobe {
+    return (Test-Path "C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.exe")
+}
+
+# -----------------------
+# Retry Wrapper
+# -----------------------
+
 function Install-WithRetry {
-    param([string]$pkg)
+    param(
+        [string]$Pkg,
+        [string]$DisplayName,
+        [scriptblock]$VerifyFunction
+    )
 
     $maxAttempts = 3
     $attempt = 1
 
     while ($attempt -le $maxAttempts) {
-        Write-Host "`nInstalling $pkg (Attempt $attempt of $maxAttempts)..."
-        Start-Process "choco" -ArgumentList "install $pkg -y" -NoNewWindow -Wait
+        Write-Host "`nInstalling $DisplayName (Attempt $attempt of $maxAttempts)..."
 
-        $installed = choco list --local-only | Select-String -Pattern $pkg
-        if ($installed) {
-            Write-Host "`nSUCCESS: $pkg installed.`n"
+        # Install the package
+        Start-Process "choco" -ArgumentList "install $Pkg -y --force" -NoNewWindow -Wait
+
+        # Treat "already installed" as success
+        if (& $VerifyFunction) {
+            Write-Host "`nSUCCESS: $DisplayName installed.`n"
             return $true
         }
 
-        Write-Host "FAILED: $pkg did not install."
+        Write-Host "FAILED: $DisplayName verification failed."
         $attempt++
         Start-Sleep -Seconds 2
     }
 
-    Write-Host "`nERROR: $pkg failed after $maxAttempts attempts."
+    Write-Host "`nERROR: $DisplayName failed after $maxAttempts attempts.`n"
     return $false
 }
 
-$chromeOK = Install-WithRetry -pkg "googlechrome"
-$adobeOK  = Install-WithRetry -pkg "adobereader"
+# -----------------------
+# Install Chrome
+# -----------------------
+$chromeOK = Install-WithRetry `
+    -Pkg "googlechrome" `
+    -DisplayName "Google Chrome" `
+    -VerifyFunction { Verify-Chrome }
+
+# -----------------------
+# Install Adobe Reader
+# -----------------------
+$adobeOK = Install-WithRetry `
+    -Pkg "adobereader" `
+    -DisplayName "Adobe Reader" `
+    -VerifyFunction { Verify-Adobe }
+
+# -----------------------
+# Final Banner
+# -----------------------
 
 if ($chromeOK -and $adobeOK) {
     Write-Host "`n========================================="
@@ -166,7 +205,6 @@ if ($chromeOK -and $adobeOK) {
 }
 
 Write-Host "This window may now be closed."
-
 '@
 
     $tempScript = "$env:TEMP\CT_Chocolatey_Install.ps1"
