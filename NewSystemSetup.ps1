@@ -143,10 +143,10 @@ function Install-SoftwarePackages {
 
     try {
         Write-Host "`n=== Installing Google Chrome ==="
-        Start-Process "choco" -ArgumentList "install googlechrome -y" -NoNewWindow -Wait
+        Start-Process "choco" -ArgumentList "install googlechrome -y"
 
         Write-Host "`n=== Installing Adobe Reader ==="
-        Start-Process "choco" -ArgumentList "install adobereader -y" -NoNewWindow -Wait
+        Start-Process "choco" -ArgumentList "install adobereader -y"
 
         Write-Host "`nAll Chocolatey installs completed successfully."
     }
