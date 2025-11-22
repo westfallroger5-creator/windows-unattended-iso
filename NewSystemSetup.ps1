@@ -49,7 +49,7 @@ function Remove-DesktopShortcut {
 # -----------------------------
 # Function: Install Syncro Agent
 function Install-SyncroAgent {
-    Write-Log "Installing Syncro Agent..."
+    Write-Host "Installing Syncro Agent..."
     if (-not (Get-Service -Name "Syncro" -ErrorAction SilentlyContinue)) {
         $Url = "https://rmm.syncromsp.com/dl/rs/djEtMzEzMDA4ODgtMTc0MDA3NjY3NC02OTUzMi00MjM4ODUy"
         $SavePath = "C:\Windows\Temp\SyncroSetup.exe"
